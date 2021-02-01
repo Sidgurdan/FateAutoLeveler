@@ -66,7 +66,7 @@ namespace FateAutoLeveler
         
         public void OnDisabled()
         {
-            Log("Disabled");
+            Log("Disable Plugin.");
             TreeHooks.Instance.OnHooksCleared -= OnHooksCleared;
             TreeHooks.Instance.RemoveHook("TreeStart", _coroutine);
         }
@@ -110,7 +110,8 @@ namespace FateAutoLeveler
             if (aetheriteId == 0)
             {
                 Log("The required aetherite is not yet known by your character. You need: " + nextLocation);
-                
+                OnDisabled();
+
                 return false;
             }
 
@@ -134,50 +135,74 @@ namespace FateAutoLeveler
 
 			var currentLevel = (int)Core.Player.ClassLevel;
 
-			if (currentLevel >= 1 && currentLevel < 10)
+			if (currentLevel < 10)
             {
                 zone = AetheriteName.SummerfordFarms;
             }
-            if (currentLevel >= 10 && currentLevel < 20)
+            else if (currentLevel < 20)
             {
                 zone = AetheriteName.Aleport;
             }
-            if (currentLevel >= 20 && currentLevel < 25)
+            else if (currentLevel < 25)
             {
                 zone = AetheriteName.CampDrybone;
             }
-            if (currentLevel >= 25 && currentLevel < 30)
+            else if (currentLevel < 30)
             {
                 zone = AetheriteName.Quarrymill;
             }
-            if (currentLevel >= 30 && currentLevel < 35)
+            else if (currentLevel < 35)
             {
                 zone = AetheriteName.CostaDelSol;
             }
-            if (currentLevel >= 35 && currentLevel < 40)
+            else if (currentLevel < 40)
             {
                 zone = AetheriteName.CampDragonhead;
             }
-            if (currentLevel >= 40 && currentLevel < 47)
+            else if (currentLevel < 47)
             {
                 zone = AetheriteName.CampDragonhead;
             }
-            if (currentLevel >= 47 && currentLevel < 50)
+            else if (currentLevel < 50)
             {
                 zone = AetheriteName.CampOverlook;
             }
-            if (currentLevel >= 70 && currentLevel < 73)
+            else if (currentLevel < 53)
+            {
+                zone = AetheriteName.CoerthasWesternHighlands;
+            }
+            else if (currentLevel < 57)
+            {
+                zone = AetheriteName.ChurningMists;
+            }
+            else if (currentLevel < 60)
+            {
+                zone = AetheriteName.DravanianHinterlands;
+            }
+            else if (currentLevel >= 60 && currentLevel < 70)
+            {
+                // TODO
+                zone = AetheriteName.DravanianHinterlands;
+            }
+            else if (currentLevel < 73)
             {
                 zone = AetheriteName.Stilltide;
             }
-            if (currentLevel >= 73 && currentLevel < 74)
+            else if (currentLevel < 74)
             {
                 zone = AetheriteName.LydhaLran;
             }
-            if (currentLevel >= 74 && currentLevel < 75)
+            else if (currentLevel < 75)
             {
-                // TODO Add Locations 75+ 
-                zone = AetheriteName.Wolekdorf;
+                zone = AetheriteName.Slitherbough;
+            }
+            else if (currentLevel < 75)
+            {
+                zone = AetheriteName.Twine;
+            }
+            else if (currentLevel < 75)
+            {
+                zone = AetheriteName.Tomra;
             }
 
 			return zone;
@@ -220,6 +245,12 @@ namespace FateAutoLeveler
 					return AetheriteName.CampDragonhead;
                 case 180:
                     return AetheriteName.CampOverlook;
+                case 397:
+                    return AetheriteName.CoerthasWesternHighlands;
+                case 400:
+                    return AetheriteName.ChurningMists;
+                case 398:
+                    return AetheriteName.DravanianHinterlands;
                 case 814:
                     return AetheriteName.Stilltide;
                 case 813:
