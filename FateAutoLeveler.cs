@@ -4,20 +4,27 @@ using System.ComponentModel;
 using System.Configuration;
 using System.IO;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Windows.Media;
 using ff14bot;
+using ff14bot.Behavior;
 using ff14bot.Helpers;
 using ff14bot.Interfaces;
 using ff14bot.Managers;
+using ff14bot.RemoteWindows;
 using Newtonsoft.Json;
+using Buddy.Coroutines;
+using TreeSharp;
 
 namespace FateAutoLeveler
 {
     public class FateAutoLeveler : IBotPlugin
     {
-        #region Necessary Stuff
-        public string Author { get { return "Zamphire"; } }//version by rysertom
-        public Version Version { get { return new Version(1, 1); } }
+        #region Basics
+        public string Author { get { return "Sidgurdan"; } }
+        public Version Version { get { return new Version(1, 3); } }
         public string Name { get { return "Fate Auto Leveler"; } }
+        public string EnglishName { get { return "Fate Auto Leveler"; } }
         public string Description { get { return "Moves your character to appropriate level range."; } }
         public bool WantButton
         {
@@ -25,240 +32,224 @@ namespace FateAutoLeveler
         }
         public string ButtonText
         {
-			get { return "FateAutoLeveler"; }
+			       get { return "FateAutoLeveler"; }
         }
-        public void OnButtonPress()
-        {
- 
-        }
+        public void OnButtonPress() {}
         public bool Equals(IBotPlugin other)
         {
             throw new NotImplementedException();
         }
         #endregion
+        
         public void OnPulse()
         {
-            if (BotManager.Current.Name == "Fate Bot")
-            {
-                ChangeZone();
-            }
+        
         }
 
+        private Composite _coroutine;
         public void OnInitialize()
         {
-
+            _coroutine = new ActionRunCoroutine(r => ChangeZone());
         }
+
         public void OnShutdown()
         {
 
         }
+        
         public void OnEnabled()
         {
-
+            Log("Enabled");
+            TreeHooks.Instance.AddHook("TreeStart", _coroutine);
+            TreeHooks.Instance.OnHooksCleared += OnHooksCleared;
         }
+        
         public void OnDisabled()
         {
-
+            Log("Disabled");
+            TreeHooks.Instance.OnHooksCleared -= OnHooksCleared;
+            TreeHooks.Instance.RemoveHook("TreeStart", _coroutine);
         }
 
-        #region Atmas
-        public void ChangeZone()
+        private void OnHooksCleared(object sender, EventArgs args)
         {
-            #region Change zones
-                if (NextLocation() == "None")
-                {
-                    Logging.Write("You don't have the Aetheryte for this level range.");
-                    return;
-                }
-
-                if (CurrentLocation(WorldManager.ZoneId) == NextLocation())
-                {
-                    return;
-                }
-
-                //TreeRoot.Stop();
-
-                if (Core.Player.IsMounted)
-                {
-                    ActionManager.Dismount();
-                    Thread.Sleep(1000);
-                }
-
-                if (CurrentLocation(WorldManager.ZoneId) != NextLocation())
-                {
-                    Logging.Write("[FateBot] Moving to " + NextLocation());
-                    if (NextLocation() == "Dravanian Hinterlands")
-                        WorldManager.TeleportById(76);
-                    else
-                        WorldManager.TeleportById(Aetheryteid());
-                    Thread.Sleep(15000);
-                    //TreeRoot.Start();
-
-                }
-            
-
-            #endregion
+            TreeHooks.Instance.AddHook("TreeStart", _coroutine);
         }
 
-		
+        #region Change Zone Logic
+        internal async Task<bool> ChangeZone()
+        {
+            // Leave if in wrong BotBase
+            if (BotManager.Current.Name != "Fate Bot" && BotManager.Current.Name != "ExFateBot")
+            {
+                return false;
+            }
+
+            string nextLocation = NextLocation(); 
+
+            // Leave if there is no next location
+            if (nextLocation == AetheriteName.None)
+            {
+                Logging.Write("There is not recommended zone for your level registered.");
+                return false;
+            }
+            
+            // Leave if player is already on the recommended map
+            if (CurrentLocation(WorldManager.ZoneId) == nextLocation)
+            {
+                return false;
+            }
+
+            if (Core.Player.IsMounted)
+            {
+                await CommonTasks.StopAndDismount();
+            }
+
+            UInt32 aetheriteId = FindAetheriteId(nextLocation);
+
+            if (aetheriteId == 0)
+            {
+                Log("The required aetherite is not yet known by your character. You need: " + nextLocation);
+                
+                return false;
+            }
+
+            Log("Teleporting to " + nextLocation);
+
+            await CommonTasks.Teleport(aetheriteId);
+
+            while (NowLoading.IsVisible)
+            {
+                Log("Loading Screen detected. Waiting for 3s!");
+                await Coroutine.Sleep(3000);
+            }
+
+            return true;
+        }
+
+
         public string NextLocation()
         {
-            string zone = null;
-			
+            string zone = AetheriteName.None;
+
 			var currentLevel = (int)Core.Player.ClassLevel;
-			
-			if (currentLevel >= 10 && currentLevel < 20)
+
+			if (currentLevel >= 1 && currentLevel < 10)
             {
-                zone = "10thru20";
+                zone = AetheriteName.SummerfordFarms;
             }
-			if (currentLevel >= 20 && currentLevel <30)
+            if (currentLevel >= 10 && currentLevel < 20)
             {
-                zone = "20thru30";
+                zone = AetheriteName.Aleport;
             }
-			if (currentLevel >= 30 && currentLevel < 35)
+            if (currentLevel >= 20 && currentLevel < 25)
             {
-                zone = "30thru35";
+                zone = AetheriteName.CampDrybone;
             }
-			if (currentLevel >= 35 && currentLevel < 45)
+            if (currentLevel >= 25 && currentLevel < 30)
             {
-                zone = "35thru45";
+                zone = AetheriteName.Quarrymill;
             }
-			if (currentLevel >= 45 && currentLevel < 50)
+            if (currentLevel >= 30 && currentLevel < 35)
             {
-                zone = "45thru50";
+                zone = AetheriteName.CostaDelSol;
             }
-			if (currentLevel >= 50 && currentLevel < 53)
+            if (currentLevel >= 35 && currentLevel < 40)
             {
-                zone = "50thru53";
+                zone = AetheriteName.CampDragonhead;
             }
-			if (currentLevel >= 53 && currentLevel < 57)
+            if (currentLevel >= 40 && currentLevel < 47)
             {
-                zone = "53thru57";
+                zone = AetheriteName.CampDragonhead;
             }
-			if (currentLevel >= 57 && currentLevel < 60)
+            if (currentLevel >= 47 && currentLevel < 50)
             {
-                zone = "57thru60";
+                zone = AetheriteName.CampOverlook;
             }
-            
-//
-//            foreach (BagSlot a in InventoryManager.Slots)
-  //          {
-    //            Inventory.Add(a.Name);
-      //      }
-//
-  //          if (!Inventory.Contains(jstAtma))
-    //        {
-      //          return GetLocationName(jstAtma);
-        //    }
-//
-  //          foreach (string a in Atmas)
-    //        {
-      //          if (!Inventory.Contains(a))
-        //            atma = a;
-          //  }
-//
-  //          return GetLocationName(zone);
-			return GetLocationName(zone);
+            if (currentLevel >= 70 && currentLevel < 73)
+            {
+                zone = AetheriteName.Stilltide;
+            }
+            if (currentLevel >= 73 && currentLevel < 74)
+            {
+                zone = AetheriteName.LydhaLran;
+            }
+            if (currentLevel >= 74 && currentLevel < 75)
+            {
+                // TODO Add Locations 75+ 
+                zone = AetheriteName.Wolekdorf;
+            }
+
+			return zone;
         }
 
-        private static string GetLocationName(string zone)
+        private UInt32 FindAetheriteId(string teleportName)
         {
-            switch (zone)
+            foreach (var location in WorldManager.AvailableLocations)
             {
-                case "10thru20":
-                    return "Aleport";//138;
-
-                case "20thru30":
-                    return "Quarrymill";//153;
-
-                case "30thru35":
-                    return "Costa del Sol";//137;
-
-                case "35thru45":
-                    return "Camp Dragonhead";//155;
-
-                case "45thru50":
-                    return "Ceruleum Processing Plant";//147;
-
-                case "50thru53":
-                    return "Coerthas Western Highlands";//397;
-
-                case "53thru57":
-                    return "Churning Mists";//400;
-					
-		case "57thru60":
-                    return "Dravanian Hinterlands";//398;
-
-                default:
-                    return "None";
+                if (location.Name == teleportName)
+                {
+                    return location.AetheryteId;
+                }
             }
+
+            return 0;
         }
+
         public string CurrentLocation(uint zoneid)
         {
             switch (zoneid)
             {
+                case 152:
+                    return AetheriteName.HawthorneHut;
+                case 153:
+                    return AetheriteName.Quarrymill;
+                case 145:
+                    return AetheriteName.CampDrybone;
+                case 140:
+                    return AetheriteName.Horizon;
+                case 139:
+                    return AetheriteName.CampBronzeLake;
+                case 134:
+                    return AetheriteName.SummerfordFarms;
                 case 138:
-                	return "Aleport";//138;
-					
-		case 153:
-			return "Quarrymill";//153;
-					
+                    return AetheriteName.Aleport;
                 case 137:
-                	return "Costa del Sol";//137;
-
+					return AetheriteName.CostaDelSol;
                 case 155:
-                    	return "Camp Dragonhead";//155;
-
-                case 147:
-                    	return "Ceruleum Processing Plant";//147;
-
-                case 397:
-                    	return "Coerthas Western Highlands";//397;
-
-                case 400:
-                    	return "Churning Mists";//400;
-					
-		case 398:
-			return "Dravanian Hinterlands";//398;
-
+					return AetheriteName.CampDragonhead;
+                case 180:
+                    return AetheriteName.CampOverlook;
+                case 814:
+                    return AetheriteName.Stilltide;
+                case 813:
+                    return AetheriteName.FortJobb;
+                case 816:
+                    return AetheriteName.LydhaLran;
                 default:
-                    return "None";
+                    LogZone();
+                    return AetheriteName.None;
             }
         }
-		public uint Aetheryteid()
-		{
-			switch(NextLocation())
-			{
-				case "Aleport":
-					return 14;
-					
-				case "Quarrymill":
-					return 5;
-					
-				case "Costa del Sol":
-					return 11;
-					
-				case "Camp Dragonhead":
-					return 23;
-					
-				case "Ceruleum Processing Plant":
-					return 22;
-					
-				case "Coerthas Western Highlands":
-					return 71;
-					
-				case "Churning Mists":
-					return 78;
-					
-				case "Dravanian Hinterlands":
-					return 78;
 
-                		default:
-                    			return 2;
-			}
-		}
+        #endregion
 
+        #region Debugging
+        static void Log(string message)
+        {
+            Logging.Write(Colors.SkyBlue, "[FateAutoLeveler] " + message);
+        }
+
+        static void LogZone()
+        {
+            Logging.Write(
+                Colors.SkyBlue,
+                "[FateAutoLeveler] Unknown Zone Id: {0} | Raw Zone Id: {1} | Subzone Id: {2}", 
+                WorldManager.ZoneId, 
+                WorldManager.RawZoneId, 
+                WorldManager.SubZoneId
+            );
+        }
         #endregion
     }
  }
-
