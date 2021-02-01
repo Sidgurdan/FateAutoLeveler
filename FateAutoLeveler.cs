@@ -22,7 +22,7 @@ namespace FateAutoLeveler
     {
         #region Basics
         public string Author { get { return "Sidgurdan"; } }
-        public Version Version { get { return new Version(1, 3); } }
+        public Version Version { get { return new Version(1, 4); } }
         public string Name { get { return "Fate Auto Leveler"; } }
         public string EnglishName { get { return "Fate Auto Leveler"; } }
         public string Description { get { return "Moves your character to appropriate level range."; } }
