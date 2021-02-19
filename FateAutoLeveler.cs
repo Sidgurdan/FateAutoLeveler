@@ -1,19 +1,13 @@
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Configuration;
-using System.IO;
-using System.Threading;
 using System.Threading.Tasks;
-using System.Windows.Media;
 using ff14bot;
 using ff14bot.Behavior;
 using ff14bot.Helpers;
 using ff14bot.Interfaces;
 using ff14bot.Managers;
 using ff14bot.RemoteWindows;
-using Newtonsoft.Json;
 using Buddy.Coroutines;
+using System.Windows.Media;
 using TreeSharp;
 
 namespace FateAutoLeveler
@@ -22,7 +16,7 @@ namespace FateAutoLeveler
     {
         #region Basics
         public string Author { get { return "Sidgurdan"; } }
-        public Version Version { get { return new Version(1, 4); } }
+        public Version Version { get { return new Version(1, 5); } }
         public string Name { get { return "Fate Auto Leveler"; } }
         public string EnglishName { get { return "Fate Auto Leveler"; } }
         public string Description { get { return "Moves your character to appropriate level range."; } }
@@ -40,16 +34,36 @@ namespace FateAutoLeveler
             throw new NotImplementedException();
         }
         #endregion
-        
+
+        #region Prerequirements and Hooks
+        private Composite _coroutine;
+        private bool _enabled;
+        private uint? _disabledForLevel;
+
         public void OnPulse()
         {
-        
+            if (!CheckBotBase())
+            {
+                _enabled = false;
+
+                return;
+            }
+
+            if (_disabledForLevel.HasValue && (uint) Core.Player.ClassLevel == _disabledForLevel)
+            {
+                _enabled = false;
+                
+                return;
+            }
+
+            _enabled = true;
         }
 
-        private Composite _coroutine;
         public void OnInitialize()
         {
             _coroutine = new ActionRunCoroutine(r => ChangeZone());
+            _enabled = true;
+            _disabledForLevel = null;
         }
 
         public void OnShutdown()
@@ -66,9 +80,14 @@ namespace FateAutoLeveler
         
         public void OnDisabled()
         {
-            Log("Disable Plugin.");
             TreeHooks.Instance.OnHooksCleared -= OnHooksCleared;
             TreeHooks.Instance.RemoveHook("TreeStart", _coroutine);
+        }
+
+        private void DisablePluginUntilLevelChange()
+        {
+            _enabled = false;
+            _disabledForLevel = (uint) Core.Player.ClassLevel;
         }
 
         private void OnHooksCleared(object sender, EventArgs args)
@@ -76,48 +95,69 @@ namespace FateAutoLeveler
             TreeHooks.Instance.AddHook("TreeStart", _coroutine);
         }
 
+        private bool CheckBotBase()
+        {
+            return (BotManager.Current.Name == "Fate Bot" || BotManager.Current.Name == "ExFateBot" || BotManager.Current.Name == "LizExFateBot");
+        }
+        #endregion
+
         #region Change Zone Logic
         internal async Task<bool> ChangeZone()
         {
-            // Leave if in wrong BotBase
-            if (BotManager.Current.Name != "Fate Bot" && BotManager.Current.Name != "ExFateBot")
+            // Skip if OnPulse disabled the plugin functionality
+            if(_enabled == false)
             {
                 return false;
             }
 
-            string nextLocation = NextLocation(); 
+            var nextAetherite = FindNextAetherite();
 
-            // Leave if there is no next location
-            if (nextLocation == AetheriteName.None)
+            if (nextAetherite == null)
             {
-                Logging.Write("There is not recommended zone for your level registered.");
+                Log("There is no recommended zone for your level registered.");
+                DisablePluginUntilLevelChange();
+
                 return false;
             }
+
+            bool playerIsOnCorrectMap = WorldManager.ZoneId == nextAetherite.ZoneId;
+            if (playerIsOnCorrectMap)
+            {
+                return false;
+            }            
             
-            // Leave if player is already on the recommended map
-            if (CurrentLocation(WorldManager.ZoneId) == nextLocation)
+            try
             {
+                WorldManager.TeleportLocation aetherite = FindAetheriteInAvailableLocations(nextAetherite.Name);
+
+                await PrepareForTeleport();
+
+                Log("Teleporting to " + aetherite.Name);
+                await CommonTasks.Teleport(aetherite.AetheryteId);
+            }
+            catch (Exception exception)
+            {
+                Logging.WriteVerbose(exception.ToString());
+                LogZone();
+                Log("The required aetherite is not yet known by your character. You need: " + nextAetherite.Name);
+                Log("Please disable/enable the plugin once you have the aetherite acquired.");
+
+                // TODO Manually MoveTo if aetherite is not known
+
+                DisablePluginUntilLevelChange();
+
                 return false;
             }
 
+            return true;
+        }
+
+        private async Task<bool> PrepareForTeleport()
+        {
             if (Core.Player.IsMounted)
             {
                 await CommonTasks.StopAndDismount();
             }
-
-            UInt32 aetheriteId = FindAetheriteId(nextLocation);
-
-            if (aetheriteId == 0)
-            {
-                Log("The required aetherite is not yet known by your character. You need: " + nextLocation);
-                OnDisabled();
-
-                return false;
-            }
-
-            Log("Teleporting to " + nextLocation);
-
-            await CommonTasks.Teleport(aetheriteId);
 
             while (NowLoading.IsVisible)
             {
@@ -128,141 +168,36 @@ namespace FateAutoLeveler
             return true;
         }
 
+        
 
-        public string NextLocation()
+        private Aetherite FindNextAetherite()
         {
-            string zone = AetheriteName.None;
+            int level = (int) Core.Player.ClassLevel;
 
-			var currentLevel = (int)Core.Player.ClassLevel;
-
-			if (currentLevel < 10)
+            foreach (var entry in AetheriteName.GetTargetAetherites())
             {
-                zone = AetheriteName.SummerfordFarms;
-            }
-            else if (currentLevel < 20)
-            {
-                zone = AetheriteName.Aleport;
-            }
-            else if (currentLevel < 25)
-            {
-                zone = AetheriteName.CampDrybone;
-            }
-            else if (currentLevel < 30)
-            {
-                zone = AetheriteName.Quarrymill;
-            }
-            else if (currentLevel < 35)
-            {
-                zone = AetheriteName.CostaDelSol;
-            }
-            else if (currentLevel < 40)
-            {
-                zone = AetheriteName.CampDragonhead;
-            }
-            else if (currentLevel < 47)
-            {
-                zone = AetheriteName.CampDragonhead;
-            }
-            else if (currentLevel < 50)
-            {
-                zone = AetheriteName.CampOverlook;
-            }
-            else if (currentLevel < 53)
-            {
-                zone = AetheriteName.CoerthasWesternHighlands;
-            }
-            else if (currentLevel < 57)
-            {
-                zone = AetheriteName.ChurningMists;
-            }
-            else if (currentLevel < 60)
-            {
-                zone = AetheriteName.DravanianHinterlands;
-            }
-            else if (currentLevel >= 60 && currentLevel < 70)
-            {
-                // TODO
-                zone = AetheriteName.DravanianHinterlands;
-            }
-            else if (currentLevel < 73)
-            {
-                zone = AetheriteName.Stilltide;
-            }
-            else if (currentLevel < 74)
-            {
-                zone = AetheriteName.LydhaLran;
-            }
-            else if (currentLevel < 75)
-            {
-                zone = AetheriteName.Slitherbough;
-            }
-            else if (currentLevel < 75)
-            {
-                zone = AetheriteName.Twine;
-            }
-            else if (currentLevel < 75)
-            {
-                zone = AetheriteName.Tomra;
+                var aetherite = entry.Value;
+                if (level >= aetherite.MinLevel && level <= aetherite.MaxLevel)
+                {
+                    return aetherite;
+                }
             }
 
-			return zone;
+            return null;
         }
 
-        private UInt32 FindAetheriteId(string teleportName)
+        private WorldManager.TeleportLocation FindAetheriteInAvailableLocations(string teleportName)
         {
             foreach (var location in WorldManager.AvailableLocations)
             {
                 if (location.Name == teleportName)
                 {
-                    return location.AetheryteId;
+                    return location;
                 }
             }
 
-            return 0;
+            throw new Exception("Requested Aetherite not found in known locations.");
         }
-
-        public string CurrentLocation(uint zoneid)
-        {
-            switch (zoneid)
-            {
-                case 152:
-                    return AetheriteName.HawthorneHut;
-                case 153:
-                    return AetheriteName.Quarrymill;
-                case 145:
-                    return AetheriteName.CampDrybone;
-                case 140:
-                    return AetheriteName.Horizon;
-                case 139:
-                    return AetheriteName.CampBronzeLake;
-                case 134:
-                    return AetheriteName.SummerfordFarms;
-                case 138:
-                    return AetheriteName.Aleport;
-                case 137:
-					return AetheriteName.CostaDelSol;
-                case 155:
-					return AetheriteName.CampDragonhead;
-                case 180:
-                    return AetheriteName.CampOverlook;
-                case 397:
-                    return AetheriteName.CoerthasWesternHighlands;
-                case 400:
-                    return AetheriteName.ChurningMists;
-                case 398:
-                    return AetheriteName.DravanianHinterlands;
-                case 814:
-                    return AetheriteName.Stilltide;
-                case 813:
-                    return AetheriteName.FortJobb;
-                case 816:
-                    return AetheriteName.LydhaLran;
-                default:
-                    LogZone();
-                    return AetheriteName.None;
-            }
-        }
-
         #endregion
 
         #region Debugging
