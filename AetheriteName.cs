@@ -22,7 +22,7 @@ namespace FateAutoLeveler
 
         #region Heavensward 50-60
         public const string CoerthasWesternHighlands = "Coerthas Western Highlands";
-        public const string ChurningMists = "Churning Mists";
+        public const string ChurningMists = "Zenith";
         public const string Tailfeather = "Tailfeather";
         #endregion
 
